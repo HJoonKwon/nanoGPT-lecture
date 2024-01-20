@@ -1,0 +1,35 @@
+1. Vanilla Bigram 
+train_loss 2.4717 , valid_loss 2.4963
+
+------ single block ------- 
+
+2. self-attention, position_embedding, last head layer  
+train_loss 2.3949 , valid_loss 2.4183
+
+3. Apply multi-head (4heads) self-attention
+train_loss 2.2576 , valid_loss 2.2801
+
+4. Add a feed forward layer
+train_loss 2.2526 , valid_loss 2.2686
+
+
+------ multiple blocks ------- 
+
+5. naive 3 blocks in a row 
+train_loss 2.4036 , valid_loss 2.4075
+
+6. Apply Residual connection, projection layer after Mult-head self-attention, inner-layer in Feed Forward 
+train_loss 1.9866 , valid_loss 2.0923 --> slight overfitting begins
+
+7. Apply Layer Normalization 
+train_loss 1.9740 , valid_loss 2.0719
+
+8. Apply dropout(0.2), number of parameters = 50721 
+train_loss 2.0848 , valid_loss 2.1241 --> slight underfitting. time to scale up the model. 
+
+9. Scale up the model, number of parameters = 12M 
+train_loss 1.0550 , valid_loss 1.5376
+
+10. Attention is all you need - style learning rate scheduler 
+train_loss 1.0740, valid_loss 1.5194
+
