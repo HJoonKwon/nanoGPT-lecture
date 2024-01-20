@@ -27,6 +27,8 @@ train_loss 1.9740 , valid_loss 2.0719
 8. Apply dropout(0.2), number of parameters = 50721 
 train_loss 2.0848 , valid_loss 2.1241 --> slight underfitting. time to scale up the model. 
 
+------- scaled-up (12M) -------- 
+
 9. Scale up the model, number of parameters = 12M 
 train_loss 1.0550 , valid_loss 1.5376
 
