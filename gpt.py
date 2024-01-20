@@ -15,7 +15,8 @@ learning_rate = 1e-3
 max_iters = 5000
 eval_interval = 500
 eval_iters = 200
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = "cuda:7" if torch.cuda.is_available() else "cpu"
+print(f"device = {device}")
 
 # read txt
 with open("notebooks/input.txt", "r", encoding="utf-8") as f:
@@ -42,6 +43,8 @@ def get_batch(split):
     ix = torch.randint(len(data) - block_size, (batch_size,))
     x = torch.stack([data[i : i + block_size] for i in ix])
     y = torch.stack([data[i + 1 : i + block_size + 1] for i in ix])
+    x = x.to(device)
+    y = y.to(device)
     return x, y
 
 
@@ -56,6 +59,7 @@ def estimate_loss():
             logits, loss = model(xb, yb)
             losses[i] = loss.item()
         out[split] = losses.mean()
+    model.train()
     return out
 
 
@@ -68,10 +72,11 @@ class Head(nn.Module):
         self.register_buffer("tril", torch.tril(torch.ones(block_size, block_size)))
 
     def forward(self, x):
+        B, T, C = x.shape
         q = self.query(x)  # (B, T, H)
         k = self.key(x)  # (B, T, H)
         weight = q @ k.transpose(-2, -1)  # (B, T, T)
-        weight = weight.masked_fill(self.tril == 0, float("-inf"))
+        weight = weight.masked_fill(self.tril[:T, :T] == 0, float("-inf"))
         weight = F.softmax(weight, dim=-1)
 
         v = self.value(x)  # (B, T, H)
@@ -83,9 +88,11 @@ class MultiHeadAttention(nn.Module):
     def __init__(self, head_size, num_heads):
         super().__init__()
         self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
+        self.project = nn.Linear(n_embd, n_embd)
 
     def forward(self, x):
         out = torch.cat([head(x) for head in self.heads], dim=-1)
+        out = self.project(out)
         return out
 
 
@@ -93,8 +100,9 @@ class FeedForward(nn.Module):
     def __init__(self, n_embd):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(n_embd, n_embd),
+            nn.Linear(n_embd, 4 * n_embd),
             nn.ReLU(),
+            nn.Linear(4 * n_embd, n_embd),
         )
 
     def forward(self, x):
@@ -110,8 +118,8 @@ class Block(nn.Module):
         self.ffwd = FeedForward(n_embd)  # computation
 
     def forward(self, x):
-        x = self.mhsa(x)
-        x = self.ffwd(x)
+        x = x + self.mhsa(x)
+        x = x + self.ffwd(x)
         return x
 
 
@@ -154,11 +162,13 @@ class GPTLanuguageModel(nn.Module):
         return idx
 
 
-model = GPTLanuguageModel()
+model = GPTLanuguageModel().to(device)
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
+print(f"number of parameters = {sum(p.numel() for p in model.parameters())}")
+
 for iter in range(max_iters):
-    if iter % eval_interval == 0:
+    if iter % eval_interval == 0 or iter == max_iters - 1:
         loss_est = estimate_loss()
         print(
             f"step {iter}/{max_iters}: train_loss {loss_est['train']:.4f} , valid_loss {loss_est['val']:.4f}"
@@ -170,5 +180,5 @@ for iter in range(max_iters):
     loss.backward()
     optimizer.step()
 
-context = torch.zeros((1, block_size), dtype=torch.long)
+context = torch.zeros((1, 1), dtype=torch.long, device=device)
 print(decode(model.generate(context, max_new_tokens=500)[0].tolist()))
