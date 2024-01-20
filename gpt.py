@@ -8,7 +8,8 @@ torch.manual_seed(2024)
 batch_size = 32
 block_size = 8
 n_embd = 32
-num_heads = 4
+n_heads = 4
+n_blocks = 3
 dropout = 0.2
 learning_rate = 1e-3
 max_iters = 5000
@@ -88,12 +89,39 @@ class MultiHeadAttention(nn.Module):
         return out
 
 
+class FeedForward(nn.Module):
+    def __init__(self, n_embd):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(n_embd, n_embd),
+            nn.ReLU(),
+        )
+
+    def forward(self, x):
+        out = self.net(x)
+        return out
+
+
+class Block(nn.Module):
+    def __init__(self, n_embd, n_heads):
+        super().__init__()
+        head_size = n_embd // n_heads
+        self.mhsa = MultiHeadAttention(head_size, n_heads)  # communication
+        self.ffwd = FeedForward(n_embd)  # computation
+
+    def forward(self, x):
+        x = self.mhsa(x)
+        x = self.ffwd(x)
+        return x
+
+
 class GPTLanuguageModel(nn.Module):
     def __init__(self):
         super().__init__()
         self.token_embedding = nn.Embedding(vocab_size, n_embd)
         self.position_embedding = nn.Embedding(block_size, n_embd)
-        self.msa_head = MultiHeadAttention(n_embd // num_heads, num_heads)
+        self.blocks = nn.Sequential(*[Block(n_embd, n_heads) for _ in range(n_blocks)])
+        self.ffwd = FeedForward(n_embd)
         self.lm_head = nn.Linear(n_embd, vocab_size)
 
     def forward(self, idx, targets=None):
@@ -101,7 +129,8 @@ class GPTLanuguageModel(nn.Module):
         tok_emb = self.token_embedding(idx)  # (B, T, C)
         pos_emb = self.position_embedding(torch.arange(T, device=device))  # (T, C)
         x = tok_emb + pos_emb  # (B, T, C)
-        x = self.msa_head(x)  # (B, T, H)
+        x = self.blocks(x)  # (B, T, H) data-dependent weight (self-attention mechanism)
+        x = self.ffwd(x)  # data-independent weight. Per node calculation.
         logits = self.lm_head(x)  # (B, T, vocab_size)
 
         if targets is None:
