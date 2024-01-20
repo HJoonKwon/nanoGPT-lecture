@@ -98,6 +98,35 @@ class MultiHeadAttention(nn.Module):
         out = self.project(self.dropout(out))
         return out
 
+class MultiHeadAttentionParallel(nn.Module):
+    def __init__(self, head_size, n_heads):
+        super().__init__()
+        self.linear_qkv = nn.Linear(n_embd, 3 * head_size, bias=False)
+        self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
+        self.project = nn.Linear(n_embd, n_embd)
+        self.attn_dropout = nn.Dropout(dropout)
+        self.proj_dropout = nn.Dropout(dropout)
+
+        self.n_heads = n_heads
+        self.head_size = head_size
+    
+    def forward(self, x):
+        B, T, C = x.shape 
+        q, k, v = self.linear_qkv(x).split(self.head_size, dim=2)
+        q = q.view(B, T, self.n_heads, self.head_size // self.n_heads).transpose(2, 1) # (B, nh, T, h)
+        k = k.view(B, T, self.n_heads, self.head_size // self.n_heads).transpose(2, 1)
+        v = v.view(B, T, self.n_heads, self.head_size // self.n_heads).transpose(2, 1)
+
+        weight = q @ k.transpose(-2, -1) # (B, nh, T, T)
+        weight = weight.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
+        weight = F.softmax(weight, dim = -1)
+        weight = self.attn_dropout(weight)
+
+        out = weight @ v # (B, nh, T, T) @ (B, nh, T, h) = (B, nh, T, h)
+        out = out.transpose(1, 2).contiguous().view(B, T, self.head_size) # (B, T, H)
+        out = self.project(self.proj_dropout(out)) 
+        return out 
+        
 
 class FeedForward(nn.Module):
     def __init__(self, n_embd):
@@ -115,10 +144,10 @@ class FeedForward(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, n_embd, n_heads):
+    def __init__(self, head_size, n_heads):
         super().__init__()
-        head_size = n_embd // n_heads
-        self.mhsa = MultiHeadAttention(head_size, n_heads)  # communication
+        #self.mhsa = MultiHeadAttention(head_size // n_heads, n_heads)  # communication
+        self.mhsa = MultiHeadAttentionParallel(head_size, n_heads)
         self.ffwd = FeedForward(n_embd)  # computation
         self.ln1 = nn.LayerNorm(n_embd)
         self.ln2 = nn.LayerNorm(n_embd)
@@ -197,4 +226,5 @@ for iter in range(max_iters):
     scheduler.step()
 
 context = torch.zeros((1, 1), dtype=torch.long, device=device)
-print(decode(model.generate(context, max_new_tokens=500)[0].tolist()))
+# print(decode(model.generate(context, max_new_tokens=500)[0].tolist()))
+open('more.txt', 'w').write(decode(model.generate(context, max_new_tokens=10000)[0].tolist()))
