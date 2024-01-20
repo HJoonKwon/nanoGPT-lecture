@@ -8,10 +8,11 @@ torch.manual_seed(2024)
 batch_size = 32
 block_size = 8
 n_embd = 32
+num_heads = 4
 dropout = 0.2
 learning_rate = 1e-3
 max_iters = 5000
-eval_interval = 300
+eval_interval = 500
 eval_iters = 200
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -77,12 +78,22 @@ class Head(nn.Module):
         return out
 
 
+class MultiHeadAttention(nn.Module):
+    def __init__(self, head_size, num_heads):
+        super().__init__()
+        self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
+
+    def forward(self, x):
+        out = torch.cat([head(x) for head in self.heads], dim=-1)
+        return out
+
+
 class GPTLanuguageModel(nn.Module):
     def __init__(self):
         super().__init__()
         self.token_embedding = nn.Embedding(vocab_size, n_embd)
         self.position_embedding = nn.Embedding(block_size, n_embd)
-        self.sa_head = Head(n_embd)
+        self.msa_head = MultiHeadAttention(n_embd // num_heads, num_heads)
         self.lm_head = nn.Linear(n_embd, vocab_size)
 
     def forward(self, idx, targets=None):
@@ -90,7 +101,7 @@ class GPTLanuguageModel(nn.Module):
         tok_emb = self.token_embedding(idx)  # (B, T, C)
         pos_emb = self.position_embedding(torch.arange(T, device=device))  # (T, C)
         x = tok_emb + pos_emb  # (B, T, C)
-        x = self.sa_head(x)  # (B, T, H)
+        x = self.msa_head(x)  # (B, T, H)
         logits = self.lm_head(x)  # (B, T, vocab_size)
 
         if targets is None:
