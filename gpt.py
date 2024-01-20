@@ -82,8 +82,8 @@ class Head(nn.Module):
         v = self.value(x)  # (B, T, H)
         out = weight @ v  # (B, T, H)
         return out
-
-
+    
+    
 class MultiHeadAttention(nn.Module):
     def __init__(self, head_size, num_heads):
         super().__init__()
@@ -116,10 +116,12 @@ class Block(nn.Module):
         head_size = n_embd // n_heads
         self.mhsa = MultiHeadAttention(head_size, n_heads)  # communication
         self.ffwd = FeedForward(n_embd)  # computation
+        self.ln1 = nn.LayerNorm(n_embd)
+        self.ln2 = nn.LayerNorm(n_embd)
 
     def forward(self, x):
-        x = x + self.mhsa(x)
-        x = x + self.ffwd(x)
+        x = x + self.mhsa(self.ln1(x))
+        x = x + self.ffwd(self.ln2(x))
         return x
 
 
@@ -131,6 +133,7 @@ class GPTLanuguageModel(nn.Module):
         self.blocks = nn.Sequential(*[Block(n_embd, n_heads) for _ in range(n_blocks)])
         self.ffwd = FeedForward(n_embd)
         self.lm_head = nn.Linear(n_embd, vocab_size)
+        self.ln = nn.LayerNorm(n_embd)
 
     def forward(self, idx, targets=None):
         B, T = idx.shape
@@ -138,7 +141,7 @@ class GPTLanuguageModel(nn.Module):
         pos_emb = self.position_embedding(torch.arange(T, device=device))  # (T, C)
         x = tok_emb + pos_emb  # (B, T, C)
         x = self.blocks(x)  # (B, T, H) data-dependent weight (self-attention mechanism)
-        x = self.ffwd(x)  # data-independent weight. Per node calculation.
+        x = self.ffwd(self.ln(x))  # data-independent weight. Per node calculation.
         logits = self.lm_head(x)  # (B, T, vocab_size)
 
         if targets is None:
