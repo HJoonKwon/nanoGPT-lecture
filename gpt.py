@@ -5,13 +5,13 @@ from torch.nn import functional as F
 torch.manual_seed(2024)
 
 # hyperparameters
-batch_size = 32
-block_size = 8
-n_embd = 32
-n_heads = 4
-n_blocks = 3
+batch_size = 64
+block_size = 256
+n_embd = 384
+n_heads = 6
+n_blocks = 6
 dropout = 0.2
-learning_rate = 1e-3
+learning_rate = 3e-4
 max_iters = 5000
 eval_interval = 500
 eval_iters = 200
@@ -70,6 +70,7 @@ class Head(nn.Module):
         self.key = nn.Linear(n_embd, head_size, bias=False)
         self.value = nn.Linear(n_embd, head_size, bias=False)
         self.register_buffer("tril", torch.tril(torch.ones(block_size, block_size)))
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         B, T, C = x.shape
@@ -78,21 +79,23 @@ class Head(nn.Module):
         weight = q @ k.transpose(-2, -1)  # (B, T, T)
         weight = weight.masked_fill(self.tril[:T, :T] == 0, float("-inf"))
         weight = F.softmax(weight, dim=-1)
+        weight = self.dropout(weight)  # randomly drop some communications
 
         v = self.value(x)  # (B, T, H)
         out = weight @ v  # (B, T, H)
         return out
-    
-    
+
+
 class MultiHeadAttention(nn.Module):
     def __init__(self, head_size, num_heads):
         super().__init__()
         self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
         self.project = nn.Linear(n_embd, n_embd)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         out = torch.cat([head(x) for head in self.heads], dim=-1)
-        out = self.project(out)
+        out = self.project(self.dropout(out))
         return out
 
 
@@ -103,6 +106,7 @@ class FeedForward(nn.Module):
             nn.Linear(n_embd, 4 * n_embd),
             nn.ReLU(),
             nn.Linear(4 * n_embd, n_embd),
+            nn.Dropout(dropout),
         )
 
     def forward(self, x):
@@ -166,7 +170,14 @@ class GPTLanuguageModel(nn.Module):
 
 
 model = GPTLanuguageModel().to(device)
-optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+warmup_steps = 300
+optimizer = torch.optim.AdamW(model.parameters(), lr=1.0)
+lambda_lr = (
+    lambda iter: 0.2
+    * n_embd**-0.5
+    * min((iter + 1) ** -0.5, (iter + 1) * warmup_steps**-1.5)
+)
+scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda_lr)
 
 print(f"number of parameters = {sum(p.numel() for p in model.parameters())}")
 
@@ -174,7 +185,8 @@ for iter in range(max_iters):
     if iter % eval_interval == 0 or iter == max_iters - 1:
         loss_est = estimate_loss()
         print(
-            f"step {iter}/{max_iters}: train_loss {loss_est['train']:.4f} , valid_loss {loss_est['val']:.4f}"
+            f"step {iter}/{max_iters}: train_loss {loss_est['train']:.4f}, valid_loss {loss_est['val']:.4f}, "
+            f"learning rate = {optimizer.param_groups[0]['lr']:e}"
         )
 
     xb, yb = get_batch("train")
@@ -182,6 +194,7 @@ for iter in range(max_iters):
     optimizer.zero_grad(set_to_none=True)
     loss.backward()
     optimizer.step()
+    scheduler.step()
 
 context = torch.zeros((1, 1), dtype=torch.long, device=device)
 print(decode(model.generate(context, max_new_tokens=500)[0].tolist()))
