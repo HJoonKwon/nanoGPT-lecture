@@ -33,3 +33,5 @@ train_loss 1.0550 , valid_loss 1.5376
 10. Attention is all you need - style learning rate scheduler 
 train_loss 1.0740, valid_loss 1.5194
 
+11. key-query-value and Multi-head attention in parallel 
+train_loss 1.0779, valid_loss 1.5056
