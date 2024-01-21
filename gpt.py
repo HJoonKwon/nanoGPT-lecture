@@ -11,6 +11,7 @@ n_embd = 384
 n_heads = 6
 n_blocks = 6
 dropout = 0.2
+smoothing = 0.01
 learning_rate = 3e-4
 max_iters = 5000
 eval_interval = 500
@@ -181,6 +182,12 @@ class GPTLanuguageModel(nn.Module):
             loss = None
         else:
             B, T, C = logits.shape
+            # label smoothing(0.1)
+            # soft_y = torch.full(size=(B * T, C), fill_value=smoothing / (C-1), device=device)
+            # tmp_y = targets.view(B * T).unsqueeze(1)
+            # soft_y.scatter_(1, tmp_y, 1.0 - smoothing)
+            # logits = logits.view(B * T, C)
+            # loss = F.cross_entropy(logits, soft_y, reduction='mean')
             logits = logits.view(B * T, C)
             targets = targets.view(B * T)
             loss = F.cross_entropy(logits, targets)
@@ -200,9 +207,9 @@ class GPTLanuguageModel(nn.Module):
 
 model = GPTLanuguageModel().to(device)
 warmup_steps = 300
-optimizer = torch.optim.AdamW(model.parameters(), lr=1.0)
+optimizer = torch.optim.AdamW(model.parameters(), lr=0.2)
 lambda_lr = (
-    lambda iter: 0.2
+    lambda iter: 1.0
     * n_embd**-0.5
     * min((iter + 1) ** -0.5, (iter + 1) * warmup_steps**-1.5)
 )
@@ -226,5 +233,5 @@ for iter in range(max_iters):
     scheduler.step()
 
 context = torch.zeros((1, 1), dtype=torch.long, device=device)
-# print(decode(model.generate(context, max_new_tokens=500)[0].tolist()))
-open('more.txt', 'w').write(decode(model.generate(context, max_new_tokens=10000)[0].tolist()))
+print(decode(model.generate(context, max_new_tokens=500)[0].tolist()))
+#open('more.txt', 'w').write(decode(model.generate(context, max_new_tokens=10000)[0].tolist()))

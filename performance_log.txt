@@ -30,10 +30,13 @@ train_loss 2.0848 , valid_loss 2.1241 --> slight underfitting. time to scale up 
 ------- scaled-up (12M) -------- 
 
 9. Scale up the model, number of parameters = 12M 
-train_loss 1.0550 , valid_loss 1.5376
+train_loss 1.0550 , valid_loss 1.5376 --> overfitting begins again 
 
 10. Attention is all you need - style learning rate scheduler 
 train_loss 1.0740, valid_loss 1.5194
 
 11. key-query-value and Multi-head attention in parallel 
 train_loss 1.0779, valid_loss 1.5056
+
+12. Apply label smoothing (0.01)
+train_loss 1.0634, valid_loss 1.5508 (no improvement. smoothing with 0.1 degrades the performance too much)
